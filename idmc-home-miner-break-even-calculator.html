@@ -416,6 +416,7 @@
               </div>
 
               <p class="hint">Difficulty drifts week to week — update these for current network values.</p>
+              <p class="hint" id="poolEfficiencyLine">Pool efficiency: loading…</p>
             </div>
           </div>
         </div>
@@ -566,8 +567,8 @@
     const dogeDiff = Number(document.getElementById("dogeDiffInput").value);
     const ltcReward = Number(document.getElementById("ltcRewardInput").value);
     const dogeReward = Number(document.getElementById("dogeRewardInput").value);
-    const dailyLtc = (hz * 86400 * ltcReward) / (ltcDiff * TWO_32);
-    const dailyDoge = (hz * 86400 * dogeReward) / (dogeDiff * TWO_32);
+    const dailyLtc = (hz * 86400 * ltcReward) / (ltcDiff * TWO_32) * poolEfficiency;
+    const dailyDoge = (hz * 86400 * dogeReward) / (dogeDiff * TWO_32) * poolEfficiency;
     return { dailyLtc, dailyDoge };
   }
 
@@ -685,6 +686,7 @@
   });
 
   let coinEnabled = { ltc: true, doge: true };
+  let poolEfficiency = 1;
 
   function setupCoinToggle(btnId, coinKey) {
     const btn = document.getElementById(btnId);
@@ -878,6 +880,51 @@
   document.getElementById("rateInput").value = currentRate();
   recalc();
   fetchDifficulties();
+  loadPoolEfficiency();
+
+  async function loadPoolEfficiency() {
+    const line = document.getElementById("poolEfficiencyLine");
+    try {
+      const res = await fetch("./efficiency-history.json", { cache: "no-store" });
+      if (!res.ok) throw new Error("Fetch failed");
+      const history = await res.json();
+      if (!Array.isArray(history) || history.length === 0) {
+        line.textContent = "Pool efficiency: no data yet";
+        return;
+      }
+
+      const now = Date.now();
+      const windows = [
+        { label: "24h", ms: 24 * 60 * 60 * 1000 },
+        { label: "1w", ms: 7 * 24 * 60 * 60 * 1000 },
+        { label: "1mo", ms: 30 * 24 * 60 * 60 * 1000 },
+        { label: "6mo", ms: 182 * 24 * 60 * 60 * 1000 },
+        { label: "1y", ms: 365 * 24 * 60 * 60 * 1000 },
+      ];
+
+      const results = windows.map(({ label, ms }) => {
+        const entries = history.filter(
+          (e) => now - e.ts <= ms && typeof e.efficiency === "number" && isFinite(e.efficiency)
+        );
+        if (entries.length === 0) return `${label}: not enough data yet`;
+        const avg = entries.reduce((sum, e) => sum + e.efficiency, 0) / entries.length;
+        return `${label}: ${(avg * 100).toFixed(1)}%`;
+      });
+
+      line.textContent = `Pool efficiency — ${results.join(" · ")}`;
+
+      // Use most recent 24h average as the live multiplier for yield calculations
+      const recent = history.filter(
+        (e) => now - e.ts <= 24 * 60 * 60 * 1000 && typeof e.efficiency === "number" && isFinite(e.efficiency)
+      );
+      if (recent.length > 0) {
+        poolEfficiency = recent.reduce((sum, e) => sum + e.efficiency, 0) / recent.length;
+        recalc();
+      }
+    } catch (e) {
+      line.textContent = "Pool efficiency: unavailable";
+    }
+  }
   fetchPrice("fetchLtc", ltcPriceInput, "ltcStatus");
   fetchPrice("fetchDoge", dogePriceInput, "dogeStatus");
   setInterval(fetchDifficulties, 5 * 60 * 1000);
