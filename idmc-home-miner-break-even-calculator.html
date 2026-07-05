@@ -68,12 +68,19 @@
   .row-label { font-size: 11.5px; color: var(--text-muted-5); font-weight: 700; letter-spacing: 0.02em; }
   .hint { font-size: 11px; color: var(--text-muted-3); margin: 2px 0 0; line-height: 1.4; }
   .efficiency-box {
-    margin-top: 6px; padding-top: 10px; border-top: 1px dashed var(--card-border);
-    display: flex; flex-direction: column; gap: 4px;
+    margin-top: 10px; padding: 10px 12px; border: 1px solid var(--card-border); border-radius: 8px;
+    display: flex; flex-direction: column; gap: 5px;
   }
-  .efficiency-title { font-size: 10.5px; font-weight: 700; color: var(--text-muted-3); letter-spacing: 0.03em; margin-bottom: 2px; }
-  .efficiency-row { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted-5); }
-  .efficiency-row span:last-child { font-weight: 700; color: #C9A227; }
+  .efficiency-title { font-size: 14px; font-weight: 800; color: #C9A227; letter-spacing: 0.02em; margin-bottom: 2px; }
+  .efficiency-row {
+    display: flex; justify-content: space-between; font-size: 12px; color: var(--text-muted-5);
+    padding: 4px 6px; border-radius: 5px; cursor: pointer;
+  }
+  .efficiency-row:hover { background: var(--input-bg-alt); }
+  .efficiency-row span:last-child { font-weight: 700; color: var(--text-muted-2); }
+  .efficiency-row.active { background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.4); }
+  .efficiency-row.active span:last-child { color: #22C55E; }
+  .efficiency-row.active span:first-child::after { content: " (in use)"; font-size: 10px; color: #22C55E; font-weight: 400; }
   .toggle-row { display: flex; gap: 6px; margin-bottom: 4px; }
   .mb-select, .mb-input {
     width: 100%; background: var(--input-bg-alt); border: 1px solid var(--input-border); color: var(--text);
@@ -424,11 +431,12 @@
 
               <p class="hint">Difficulty drifts week to week — update these for current network values.</p>
               <div class="efficiency-box">
-                <div class="efficiency-title">Network Efficiency (avg vs. peak hashrate)</div>
-                <div class="efficiency-row"><span>7 days</span><span id="eff7d">loading…</span></div>
-                <div class="efficiency-row"><span>30 days</span><span id="eff30d">loading…</span></div>
-                <div class="efficiency-row"><span>6 months</span><span id="eff6mo">loading…</span></div>
-                <p class="hint">The 7-day figure scales the "Estimated Daily Coins Received" above — e.g. 90% efficiency means your yield is calculated at 90% of the theoretical max, reflecting real recent uptime.</p>
+                <div class="efficiency-title">Network Efficiency</div>
+                <div class="hint" style="margin:0 0 4px">avg vs. peak hashrate — click a row to use it in the calculation</div>
+                <div class="efficiency-row" id="effRow7d" data-window="7d"><span>7 days</span><span id="eff7d">loading…</span></div>
+                <div class="efficiency-row" id="effRow30d" data-window="30d"><span>30 days</span><span id="eff30d">loading…</span></div>
+                <div class="efficiency-row" id="effRow6mo" data-window="6mo"><span>6 months</span><span id="eff6mo">loading…</span></div>
+                <p class="hint">The selected figure scales the "Estimated Daily Coins Received" above — e.g. 90% efficiency means your yield is calculated at 90% of the theoretical max, reflecting real recent uptime.</p>
               </div>
             </div>
           </div>
@@ -895,6 +903,27 @@
   fetchDifficulties();
   loadPoolEfficiency();
 
+  let efficiencyByWindow = {};
+  let selectedEffWindow = "30d";
+
+  function applySelectedEfficiency() {
+    const eff = efficiencyByWindow[selectedEffWindow];
+    if (typeof eff === "number" && isFinite(eff)) {
+      poolEfficiency = eff;
+      recalc();
+    }
+    ["7d", "30d", "6mo"].forEach((w) => {
+      document.getElementById(`effRow${w}`).classList.toggle("active", w === selectedEffWindow);
+    });
+  }
+
+  ["7d", "30d", "6mo"].forEach((w) => {
+    document.getElementById(`effRow${w}`).addEventListener("click", () => {
+      selectedEffWindow = w;
+      applySelectedEfficiency();
+    });
+  });
+
   async function loadPoolEfficiency() {
     const elIds = { "7d": "eff7d", "30d": "eff30d", "6mo": "eff6mo" };
     try {
@@ -924,16 +953,15 @@
         }
         const avg = entries.reduce((sum, e) => sum + e.mhs, 0) / entries.length;
         const eff = avg / peak;
+        efficiencyByWindow[label] = eff;
         el.textContent = `${(eff * 100).toFixed(1)}%`;
       });
 
-      // Use 7-day efficiency as the live multiplier if available
-      const recent = history.filter((e) => now - e.ts <= 7 * 24 * 60 * 60 * 1000 && typeof e.mhs === "number");
-      if (recent.length >= 4 && peak > 0) {
-        const avg = recent.reduce((sum, e) => sum + e.mhs, 0) / recent.length;
-        poolEfficiency = avg / peak;
-        recalc();
+      // Default to 30-day if available, else fall back to whatever is available
+      if (!(selectedEffWindow in efficiencyByWindow)) {
+        selectedEffWindow = ["30d", "7d", "6mo"].find((w) => w in efficiencyByWindow) || "30d";
       }
+      applySelectedEfficiency();
     } catch (e) {
       Object.values(elIds).forEach((id) => (document.getElementById(id).textContent = "unavailable"));
     }
