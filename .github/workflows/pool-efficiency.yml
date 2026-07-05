@@ -1,0 +1,62 @@
+name: Pool Efficiency Snapshot
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch hourly hashrate and backfill from longer-range charts
+        run: |
+          set -e
+          H1=$(curl -s "https://pool.texitcoin.org/stats/graph_results_1")
+          H2=$(curl -s "https://pool.texitcoin.org/stats/graph_results_4")
+          H3=$(curl -s "https://pool.texitcoin.org/stats/graph_results_7")
+
+          node -e '
+            const fs = require("fs");
+            const sets = [JSON.parse(process.argv[1]), JSON.parse(process.argv[2]), JSON.parse(process.argv[3])];
+
+            const file = "efficiency-history.json";
+            let history = [];
+            if (fs.existsSync(file)) {
+              try { history = JSON.parse(fs.readFileSync(file, "utf8")); } catch (e) { history = []; }
+            }
+
+            const existingTs = new Set(history.map((h) => h.ts));
+
+            for (const points of sets) {
+              for (const [dateStr, mhs] of points) {
+                const ts = new Date(dateStr.replace(" ", "T") + "Z").getTime();
+                if (!existingTs.has(ts) && isFinite(mhs)) {
+                  history.push({ ts, mhs: Number(mhs) });
+                  existingTs.add(ts);
+                }
+              }
+            }
+
+            history.sort((a, b) => a.ts - b.ts);
+
+            const maxEntries = 17520;
+            if (history.length > maxEntries) {
+              history = history.slice(history.length - maxEntries);
+            }
+
+            fs.writeFileSync(file, JSON.stringify(history, null, 2));
+          ' "$H1" "$H2" "$H3"
+
+      - name: Commit snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add efficiency-history.json
+          git diff --quiet --cached || git commit -m "Update hashrate history snapshot"
+          git push
