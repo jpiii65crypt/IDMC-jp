@@ -878,6 +878,8 @@
   document.getElementById("rateInput").value = currentRate();
   recalc();
   fetchDifficulties();
+  fetchPrice("fetchLtc", ltcPriceInput, "ltcStatus");
+  fetchPrice("fetchDoge", dogePriceInput, "dogeStatus");
   setInterval(fetchDifficulties, 5 * 60 * 1000);
 
   async function fetchDifficulties() {
