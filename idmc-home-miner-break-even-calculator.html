@@ -74,7 +74,10 @@
     border-radius: 6px; outline: none; transition: border-color .15s, box-shadow .15s;
   }
   .mb-select:focus, .mb-input:focus { border-color: #A33838; box-shadow: 0 0 0 3px rgba(163,56,56,0.25); }
-  .mb-input:disabled { color: var(--text-muted); background: var(--input-bg-alt); border-color: var(--input-border); }
+  .mb-input:disabled { color: var(--text); background: var(--input-bg-alt); border-color: var(--input-border); opacity: 1; }
+  .mb-input::-webkit-outer-spin-button,
+  .mb-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .mb-input[type="number"] { -moz-appearance: textfield; }
   .toggle-btn {
     flex: 1;
     font-family: 'JetBrains Mono', monospace;
